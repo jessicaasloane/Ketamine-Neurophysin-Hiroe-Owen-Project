@@ -1,0 +1,632 @@
+---
+title: "Analysis for Pre/Post-Ketamine Plasma Copeptin Analysis for RISC Participants"
+author: "Hiroe"
+date: "`r Sys.Date(7.10.2025)`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library("plyr")
+library("dplyr")
+library("readxl")
+library("tidyverse")
+library("tidyr")
+library("ggplot2")
+library("lme4")
+library("ggpubr")
+library("mediation")
+library("car")
+library("ggeffects")
+library(patchwork)  # To combine plots
+library(broom)  # For extracting model summaries
+library(rstatix)
+library(reshape)
+library(broom.mixed)
+library(ggrepel)
+```
+
+# Data Preparation 
+
+Note: 1. Values were added to biomarkers before log-transformation to make it the most normally distributed), and 2. participants on diuretics and lithium were filtered out for analysis due to the medications confounding with AVP secretion. 
+
+```{r load data}
+ket <- read_excel("Copeptin_prepostket.xlsx")
+ket$Code <- as.factor(ket$Code)
+ket$Dx <- as.factor(ket$Dx)
+ket$Diuretics <- as.factor(ket$Diuretics)
+ket$Lithium <- as.factor(ket$Lithium)
+
+# Create log-transformations; added numbers to raw values to make the log-transformed values most normally distributed
+ket <- ket %>%
+  mutate(
+    Log_Copeptin = log(Copeptin + 2),  # Adding 0.01 to avoid log(0)
+    Log_ACTH = log(ACTH + 0.5), 
+    Log_CRH = log(CRH + 0.1),
+    Copeptin_CRH_Ratio = Log_Copeptin - Log_CRH,
+    Copeptin_ACTH_Ratio = Log_Copeptin - Log_ACTH,
+    `Subject ID` = Code,
+    Time_Min = case_when(
+           Timepoint == 1 ~ -60,
+           Timepoint == 2 ~ 230,
+           Timepoint == 3 ~ 1440  #24 hrs in minutes
+         ))
+
+#Create named vector for x-axis labels for Visualization
+time_labels <- c("-60 min", "+230 min", "+24 hr")
+names(time_labels) <- c(-60, 230, 1440)
+
+# Extract behavioral data
+RISC2 <- read_excel("RISC Phase II.xlsx")
+RISC2$Code <- as.factor(RISC2$Code)
+
+# Filter out timepoint = 0 (baseline)
+ket_filtered <- ket %>%
+  filter(Timepoint != 0)
+
+# Create baseline values at timepoint = 1 for each subject
+ket_baseline <- ket_filtered %>%
+  filter(Timepoint == 1) %>%
+  select(Code, Log_Copeptin, Log_CRH, Log_ACTH) %>%
+  mutate(Baseline_Copeptin = Log_Copeptin, 
+         Baseline_CRH = Log_CRH, 
+         Baseline_ACTH = Log_ACTH) %>%
+  select(Code, Baseline_Copeptin, Baseline_CRH, Baseline_ACTH) 
+
+# Merge baseline values back into the dataset
+combined_ket <- ket_filtered %>%
+  left_join(ket_baseline, by = "Code") 
+
+# Merge behavior/symptoms
+combined_ket <- combined_ket %>% left_join(RISC2, by = c("Code", "Timepoint"))
+
+
+```
+
+```{r linear vs. mixed model}
+### Small sample size, mixed model or simple regression better fit ? 
+mod1 <- lmerTest::lmer(Log_Copeptin ~ Timepoint + (1|`Subject ID`), data = combined_ket)
+mod2 <- lm(Log_Copeptin ~ Timepoint, data = combined_ket)
+anova(mod1,mod2) 
+#lmer model has less AIC, better fit, so will use lmer (mixed model)
+
+```
+
+```{r Spaghetti plot for initial visuazlization and to include in supplemental materials if needed}
+
+#faceted by Dx
+ggplot(combined_ket, aes(x = Time_Min, y = Log_Copeptin, group = `Subject ID`)) +
+  scale_x_continuous(breaks = c(-60, 230, 1440), labels = time_labels) +
+  labs(title = "Copeptin Trajectory Pre/Post Ketamine",
+       x = "Time Relative to Infusion",
+       y = "Log Copeptin") +
+  geom_line(aes(color = `Subject ID`), alpha = 0.7) +
+  geom_point(aes(color = `Subject ID`)) +
+  facet_wrap(~Dx) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+ggplot(combined_ket, aes(x = Time_Min, y = Copeptin_CRH_Ratio, group = `Subject ID`)) +
+  scale_x_continuous(breaks = c(-60, 230, 1440), labels = time_labels) +
+  labs(title = "Copeptin/CRH Ratio Trajectory Pre/Post Ketamine",
+       x = "Time Relative to Infusion",
+       y = "Copeptin/CRH Ratio") +
+  geom_line(aes(color = `Subject ID`), alpha = 0.7) +
+  geom_point(aes(color = `Subject ID`)) +
+  facet_wrap(~Dx) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+ggplot(combined_ket, aes(x = Time_Min, y = Copeptin_ACTH_Ratio, group = `Subject ID`)) +
+  scale_x_continuous(breaks = c(-60, 230, 1440), labels = time_labels) +
+  labs(title = "Copeptin/ACTH Ratio Trajectory Pre/Post Ketamine",
+       x = "Time Relative to Infusion",
+       y = "Copeptin/ACTH Ratio") +
+  geom_line(aes(color = `Subject ID`), alpha = 0.7) +
+  geom_point(aes(color = `Subject ID`)) +
+  facet_wrap(~Dx) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+ggplot(combined_ket, aes(x = Time_Min, y = Log_CRH, group = `Subject ID`)) +
+  scale_x_continuous(breaks = c(-60, 230, 1440), labels = time_labels) +
+  labs(title = "CRH Trajectory Pre/Post Ketamine",
+       x = "Time Relative to Infusion",
+       y = "Log CRH") +
+  geom_line(aes(color = `Subject ID`), alpha = 0.7) +
+  geom_point(aes(color = `Subject ID`)) +
+  facet_wrap(~Dx) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+ggplot(combined_ket, aes(x = Time_Min, y = Log_ACTH, group = `Subject ID`)) +
+  scale_x_continuous(breaks = c(-60, 230, 1440), labels = time_labels) +
+  labs(title = "ACTH Trajectory Pre/Post Ketamine",
+       x = "Time Relative to Infusion",
+       y = "Log ACTH") +
+  geom_line(aes(color = `Subject ID`), alpha = 0.7) +
+  geom_point(aes(color = `Subject ID`)) +
+  facet_wrap(~Dx) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+```
+```{r filter data}
+
+#101 = on lithium and diuretics, but trajectory of copeptin not different from others so include
+#109 = on diuretics but spironolactone (weak) for feminization; copeptin trajectory also similar to others so include
+#507 = -60min copeptin at unphysiologic level (+60pg/ml), discussed w/ Dr. Verbalis and should exclude this participant 
+
+combined_ket <- combined_ket %>%
+  filter(`Subject ID` != 507)
+
+```
+
+```{r linear mixed models, while controlling for baseline}
+
+summary(lmerTest::lmer(Log_Copeptin ~ Timepoint + Baseline_Copeptin + (1|`Subject ID`), data = combined_ket)) 
+summary(lmerTest::lmer(Log_CRH ~ Timepoint  + Baseline_CRH + (1|`Subject ID`), data = combined_ket))
+summary(lmerTest::lmer(Log_ACTH ~ Timepoint + Baseline_ACTH + (1|`Subject ID`), data =combined_ket))
+summary(lmerTest::lmer(Copeptin_CRH_Ratio ~ Timepoint + Baseline_Copeptin + Baseline_CRH + (1|`Subject ID`), data = combined_ket)) 
+summary(lmerTest::lmer(Copeptin_ACTH_Ratio ~ Timepoint + Baseline_Copeptin + Baseline_ACTH + (1|`Subject ID`), data = combined_ket)) 
+
+# linear mixed models assuming a linear trajectory across timepoints were not significant fits for all biomarkers, also  consistent with visual inspection of the spaghetti plots
+```
+
+```{r quadratic mixed models, while controlling for baseline}
+
+#Copeptin
+summary(lmerTest::lmer(Log_Copeptin ~ poly(Timepoint, 2) + Baseline_Copeptin+ (1|`Subject ID`), data =combined_ket)) 
+
+combined_ket <- combined_ket %>%
+  mutate(Time_Factor = factor(
+    Time_Min,
+    levels = c(-60, 230, 1440),
+    labels = c("-60 min", "+230 min", "+24 hr")
+  ))
+
+p1 <- ggplot(combined_ket, aes(x = Time_Min, y = Log_Copeptin)) +
+  
+  # quadratic regression line + CI band
+  stat_smooth(
+    method  = "lm",
+    formula = y ~ poly(x, 2),
+    se      = TRUE,
+    size    = 1.3,
+    color   = "deeppink4",     
+    fill    = "lightpink",      
+    alpha   = 0.3
+  ) +
+  
+  # scales & labels
+  scale_color_brewer(
+    palette = "Set2",
+    name    = "Timepoint"
+  ) +
+  scale_x_continuous(
+    breaks = c(-60, 230, 1440),
+    labels = time_labels
+  ) +
+  labs(
+    title = "Copeptin Trajectory",
+    x     = "Time Relative to Infusion",
+    y     = "Log Copeptin"
+  ) +
+  
+  # theme tweaks
+  theme_minimal(base_size = 8) +
+  theme(
+    plot.title       = element_text(hjust = 0.5, face = "bold", size = 8),
+    axis.text.x      = element_text(face = "bold", size = 6),
+    axis.title       = element_text(face = "bold", size = 6),
+    legend.position  = "none",
+    legend.title     = element_text(face = "bold"),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_blank()
+  )
+
+
+#Copeptin/CRH
+summary(lmerTest::lmer(Copeptin_CRH_Ratio ~ poly(Timepoint, 2) + Baseline_CRH + Baseline_Copeptin + (1|`Subject ID`), data = combined_ket)) 
+
+p4 <- ggplot(combined_ket, aes(x = Time_Min, y = Copeptin_CRH_Ratio)) +
+  
+  # quadratic regression line + CI band
+  stat_smooth(
+    method  = "lm",
+    formula = y ~ poly(x, 2),
+    se      = TRUE,
+    size    = 1.3,
+    color   = "darkblue",     
+    fill    = "lightblue",      
+    alpha   = 0.3
+  ) +
+  
+  # scales & labels
+  scale_color_brewer(
+    palette = "Set2",
+    name    = "Timepoint"
+  ) +
+  scale_x_continuous(
+    breaks = c(-60, 230, 1440),
+    labels = time_labels
+  ) +
+  labs(
+    title = "Copeptin/CRH Trajectory",
+    x     = "Time Relative to Infusion",
+    y     = "Log Copeptin/CRH"
+  ) +
+  
+  # theme tweaks
+  theme_minimal(base_size = 8) +
+  theme(
+    plot.title       = element_text(hjust = 0.5, face = "bold", size = 8),
+    axis.text.x      = element_text(face = "bold", size = 6),
+    axis.title       = element_text(face = "bold", size = 6),
+    legend.position  = "none",
+    legend.title     = element_text(face = "bold"),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_blank()
+  )
+
+#Copeptin/ACTH
+summary(lmerTest::lmer(Copeptin_ACTH_Ratio ~ poly(Timepoint, 2) + Baseline_ACTH + Baseline_Copeptin + (1|`Subject ID`), data = combined_ket)) 
+
+p5 <- ggplot(combined_ket, aes(x = Time_Min, y = Copeptin_ACTH_Ratio)) +
+  
+  # quadratic regression line + CI band
+  stat_smooth(
+    method  = "lm",
+    formula = y ~ poly(x, 2),
+    se      = TRUE,
+    size    = 1.3,
+    color   = "purple",     
+    fill    = "lavender",      
+    alpha   = 0.3
+  ) +
+  
+  # scales & labels
+  scale_color_brewer(
+    palette = "Set2",
+    name    = "Timepoint"
+  ) +
+  scale_x_continuous(
+    breaks = c(-60, 230, 1440),
+    labels = time_labels
+  ) +
+  labs(
+    title = "Copeptin/ACTH Trajectory",
+    x     = "Time Relative to Infusion",
+    y     = "Log Copeptin/ACTH"
+  ) +
+  
+  # theme tweaks
+  theme_minimal(base_size = 8) +
+  theme(
+    plot.title       = element_text(hjust = 0.5, face = "bold", size = 8),
+    axis.text.x      = element_text(face = "bold", size = 6),
+    axis.title       = element_text(face = "bold", size = 6),
+    legend.position  = "none",
+    legend.title     = element_text(face = "bold"),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_blank()
+  )
+
+#ACTH and CRH
+summary(lmerTest::lmer(Log_CRH ~ poly(Timepoint, 2) + Baseline_CRH + (1|`Subject ID`), data = combined_ket)) 
+summary(lmerTest::lmer(Log_ACTH ~ poly(Timepoint, 2) + Baseline_ACTH + (1|`Subject ID`), data = combined_ket)) 
+
+#CRH
+p2 <- ggplot(combined_ket, aes(x = Time_Min, y = Log_CRH)) +
+
+  stat_smooth(method  = "lm",
+              formula = y ~ poly(x, 2),
+              se      = TRUE,
+              size    = 1.3,
+              color   = "lightgray",     
+              fill    = "darkgray",     
+              alpha   = 0.3) +
+  scale_color_brewer(palette = "Set2", name = "Timepoint") +
+  scale_x_continuous(breaks = c(-60, 230, 1440),
+                     labels = time_labels) +
+  labs(
+    title = "CRH Trajectory",
+    x     = "Time Relative to Infusion",
+    y     = "Log CRH"
+  ) +
+  theme_minimal(base_size = 8) +
+  theme(
+    plot.title     = element_text(hjust = 0.5, face = "bold", size = 8),
+    axis.text.x    = element_text(face = "bold", size = 6),
+    axis.title     = element_text(face = "bold", size = 6),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_blank(),
+    legend.position  = "none"     # hide legend if you like
+  )
+
+# ACTH
+p3 <-ggplot(combined_ket, aes(x = Time_Min, y = Log_ACTH)) +
+
+  stat_smooth(method  = "lm",
+              formula = y ~ poly(x, 2),
+              se      = TRUE,
+              size    = 1.3,
+              color   = "lightgray",     
+              fill    = "darkgray",    
+              alpha   = 0.3) +
+  scale_color_brewer(palette = "Set2", name = "Timepoint") +
+  scale_x_continuous(breaks = c(-60, 230, 1440),
+                     labels = time_labels) +
+  labs(
+    title = "ACTH Trajectory",
+    x     = "Time Relative to Infusion",
+    y     = "Log ACTH"
+  ) +
+  theme_minimal(base_size = 8) +
+  theme(
+    plot.title     = element_text(hjust = 0.5, face = "bold", size =8),
+    axis.text.x    = element_text(face = "bold", size = 6),
+    axis.title     = element_text(face = "bold", size = 6),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_blank(),
+    legend.position  = "none"     # hide legend if you like
+  )
+
+# Combine the plots into one figure (3 on top, 2 on bottom)
+combined_plot <- (p1 | p2 | p3) / (p4 | p5)
+
+# Display the plot
+combined_plot
+
+
+# quadratic (polynomial regression) models were the best fit for copeptin and copeptin/CRH and copeptin/ACTH
+# no significant effect seen with ACTH or CRH 
+
+```
+```{r Effect of Diagnosis of Mood vs. Mood+PTSD}
+
+# Quadratic mixed model with interaction, adjusted with baselines, across all 3 timepoints 
+
+#Copeptin/CRH
+summary(lmer(Copeptin_CRH_Ratio ~ poly(Timepoint, 2) * Dx + Baseline_Copeptin + Baseline_CRH + (1 | `Subject ID`), data = combined_ket))
+
+ggplot(combined_ket, aes(x = Time_Min, y = Copeptin_CRH_Ratio, color = Dx)) +
+  geom_point(alpha = 0.6) +
+  stat_smooth(
+    method  = "lm",
+    formula = y ~ poly(x, 2),
+    se      = TRUE,
+    size    = 1
+  ) +
+  scale_x_continuous(
+    breaks = c(-60, 230, 1440),
+    labels = time_labels
+  ) +
+  labs(
+    title = "Copeptin/CRH Trajectory by Diagnosis",
+    x     = "Time Relative to Infusion (min)",
+    y     = "Log Copeptin/CRH",
+    color = "Diagnosis"
+  ) +
+  scale_color_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(hjust = 0.5, face = "bold", size = 14),
+    axis.text.x   = element_text(face = "bold"),
+    axis.title    = element_text(face = "bold")
+  )
+
+#Copeptin/ACTH Ratio
+
+summary(lmer(Copeptin_ACTH_Ratio ~ poly(Timepoint, 2) * Dx + Baseline_Copeptin + Baseline_ACTH + (1 | `Subject ID`), data = combined_ket))
+
+ggplot(combined_ket, aes(x = Time_Min, y = Copeptin_ACTH_Ratio, color = Dx)) +
+  geom_point(alpha = 0.6) +
+  stat_smooth(
+    method  = "lm",
+    formula = y ~ poly(x, 2),
+    se      = TRUE,
+    size    = 1
+  ) +
+  scale_x_continuous(
+    breaks = c(-60, 230, 1440),
+    labels = time_labels
+  ) +
+  labs(
+    title = "Copeptin/ACTH Trajectory by Diagnosis",
+    x     = "Time Relative to Infusion (min)",
+    y     = "Log Copeptin/ACTH",
+    color = "Diagnosis"
+  ) +
+  scale_color_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(hjust = 0.5, face = "bold", size = 14),
+    axis.text.x   = element_text(face = "bold"),
+    axis.title    = element_text(face = "bold")
+  )
+
+
+#Copeptin
+summary(lmer(Log_Copeptin ~ poly(Timepoint, 2) * Dx + Baseline_Copeptin + (1 | `Subject ID`), data = combined_ket))
+
+ggplot(combined_ket, aes(x = Time_Min, y = Log_Copeptin, color = Dx)) +
+  geom_point(alpha = 0.6) +
+  stat_smooth(
+    method  = "lm",
+    formula = y ~ poly(x, 2),
+    se      = TRUE,
+    size    = 1
+  ) +
+  scale_x_continuous(
+    breaks = c(-60, 230, 1440),
+    labels = time_labels
+  ) +
+  labs(
+    title = "Copeptin Trajectory by Diagnosis",
+    x     = "Time Relative to Infusion (min)",
+    y     = "Log Copeptin",
+    color = "Diagnosis"
+  ) +
+  scale_color_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(hjust = 0.5, face = "bold", size = 14),
+    axis.text.x   = element_text(face = "bold"),
+    axis.title    = element_text(face = "bold")
+  )
+
+
+summary(lmer(Log_CRH ~ poly(Timepoint, 2) * Dx + Baseline_CRH + (1 | `Subject ID`), data = combined_ket))
+summary(lmer(Log_ACTH ~ poly(Timepoint, 2) * Dx + Baseline_ACTH+ (1 | `Subject ID`), data = combined_ket))
+
+
+crh_data <- combined_ket %>%
+  select(Subject_ID = `Subject ID`, Dx, Time_Min, Log_CRH)
+ggplot(crh_data, aes(x = Time_Min, y = Log_CRH, color = Dx, group = Dx)) +
+  geom_point(alpha = 0.5, size = 2, position = position_jitter(width = 20)) +
+  stat_summary(fun = mean, geom = "line", size = 1.2) +
+  scale_x_continuous(breaks = c(-60, 230, 1440), labels = time_labels) +
+  scale_color_brewer(palette = "Set2") +
+  labs(
+    title = "CRH Trajectory by Diagnosis",
+    x = "Time Relative to Infusion (min)",
+    y = "Log CRH",
+    color = "Diagnosis"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title     = element_text(hjust = 0.5, face = "bold"),
+    axis.text.x    = element_text(face = "bold"),
+  )
+
+acth_data <- combined_ket %>%
+  select(Subject_ID = `Subject ID`, Dx, Time_Min, Log_ACTH)
+ggplot(acth_data, aes(x = Time_Min, y = Log_ACTH, color = Dx, group = Dx)) +
+  geom_point(alpha = 0.5, size = 2, position = position_jitter(width = 20)) +
+  stat_summary(fun = mean, geom = "line", size = 1.2) +
+  scale_x_continuous(breaks = c(-60, 230, 1440), labels = time_labels) +
+  scale_color_brewer(palette = "Set2") +
+  labs(
+    title = "ACTH Trajectory by Diagnosis",
+    x = "Time Relative to Infusion (min)",
+    y = "Log ACTH",
+    color = "Diagnosis"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title     = element_text(hjust = 0.5, face = "bold"),
+    axis.text.x    = element_text(face = "bold"),
+  )
+
+
+
+```
+```{r linear estimated modeling}
+
+# Load necessary libraries
+library(lme4)
+library(emmeans)
+
+# Filter to -60min and +230min timepoints
+acute_data <- combined_ket %>% 
+  filter(Timepoint %in% c(1, 2))
+
+# Create named labels for plotting
+time_labels <- c("-60 min", "+230 min")
+names(time_labels) <- c(1, 2)
+
+# List of outcome variables
+outcomes <- c("Log_Copeptin", "Copeptin_CRH_Ratio", "Copeptin_ACTH_Ratio")
+# Loop over each outcome
+for (outcome in outcomes) {
+
+  # Base model with baseline copeptin
+  base_formula <- paste0(outcome, " ~ Timepoint * Dx + Baseline_Copeptin")
+
+  # Add appropriate baseline covariates
+  if (grepl("ACTH", outcome)) {
+    base_formula <- paste0(base_formula, " + Baseline_ACTH")
+  } else if (grepl("CRH", outcome)) {
+    base_formula <- paste0(base_formula, " + Baseline_CRH")
+  }
+
+  # Complete model with random intercept
+  formula <- as.formula(paste0(base_formula, " + (1 | `Subject ID`)"))
+
+  # Fit the model
+  model <- lmer(formula, data = acute_data)
+
+  # Estimated marginal means
+  emm <- emmeans(model, ~ Timepoint | Dx)
+  emm_df <- as.data.frame(emm)
+
+  # Create a time label factor
+  emm_df <- emm_df %>%
+    mutate(Time_Factor = factor(Timepoint, levels = c(1, 2), labels = c("-60 min", "+230 min")))
+
+  # Generate plot
+  p <- ggplot(emm_df, aes(x = Time_Factor, y = emmean, group = Dx, color = Dx)) +
+    geom_line(size = 1) +
+    geom_point(size = 3) +
+    geom_errorbar(aes(ymin = emmean - SE, ymax = emmean + SE), width = 0.1) +
+    labs(
+      title = paste0("Estimated ", outcome, " Change (–60 to +230 min)"),
+      x = "Time Relative to Infusion",
+      y = "Estimated Marginal Mean ± SE",
+      color = "Diagnosis"
+    ) +
+    scale_color_brewer(palette = "Set2") +
+    theme_minimal(base_size = 13) +
+    theme(
+      plot.title   = element_text(hjust = 0.5, face = "bold", size = 14),
+      axis.text    = element_text(size = 12),
+      axis.title.x = element_text(face = "bold"),
+      axis.title.y = element_text(face = "bold")
+    )
+
+  print(p)
+}
+
+
+
+```
+
+
+
+
+```{r　change in biomarkers in relation to symptoms}
+
+# Predict MADRS from simultaneous copeptin and copeptin/CRH
+summary(lmer(CMARS_RISC_MADRS_TOT ~ Log_Copeptin + Time_Min + (1|`Subject ID`), data = combined_ket))
+summary(lmer(CMARS_RISC_MADRS_TOT ~ Copeptin_CRH_Ratio + Time_Min + (1|`Subject ID`), data = combined_ket))
+summary(lmer(CMARS_RISC_MADRS_TOT ~ Log_Copeptin * Dx + Time_Min + (1|`Subject ID`), data = combined_ket))
+summary(lmer(CMARS_RISC_MADRS_TOT ~ Copeptin_CRH_Ratio * Dx + Time_Min + (1|`Subject ID`), data = combined_ket))
+
+# CGI
+combined_ket$CGI_SEVERITY <- as.numeric(combined_ket$CGI_SEVERITY)
+summary(lmer(CGI_SEVERITY ~ Log_Copeptin + Time_Min + (1|`Subject ID`), data = combined_ket))
+summary(lmer(CGI_SEVERITY ~ Copeptin_CRH_Ratio + Time_Min + (1|`Subject ID`), data = combined_ket))
+summary(lmer(CGI_SEVERITY ~ Log_Copeptin * Dx + Time_Min + (1|`Subject ID`), data = combined_ket))
+summary(lmer(CGI_SEVERITY ~ Copeptin_CRH_Ratio * Dx + Time_Min + (1|`Subject ID`), data = combined_ket))
+
+# HAM-A
+summary(lmer(CMARS_RISC_HAMA_TOT ~ Log_Copeptin + Time_Min + (1|`Subject ID`), data = combined_ket))
+summary(lmer(CMARS_RISC_HAMA_TOT ~ Copeptin_CRH_Ratio + Time_Min + (1|`Subject ID`), data = combined_ket))
+summary(lmer(CMARS_RISC_HAMA_TOT ~ Log_Copeptin * Dx + Time_Min + (1|`Subject ID`), data = combined_ket))
+summary(lmer(CMARS_RISC_HAMA_TOT ~ Copeptin_CRH_Ratio * Dx + Time_Min + (1|`Subject ID`), data = combined_ket))
+
+# CCSSRS SI 
+summary(lmer(CSSRS_IDEATION_SCORE ~ Log_Copeptin + Time_Min + (1|`Subject ID`), data = combined_ket))
+summary(lmer(CSSRS_IDEATION_SCORE ~ Copeptin_CRH_Ratio + Time_Min + (1|`Subject ID`), data = combined_ket))
+summary(lmer(CSSRS_IDEATION_SCORE ~ Log_Copeptin * Dx + Time_Min + (1|`Subject ID`), data = combined_ket))
+summary(lmer(CSSRS_IDEATION_SCORE ~ Copeptin_CRH_Ratio * Dx + Time_Min + (1|`Subject ID`), data = combined_ket))
+
+
+# Across four symptom domains, neither the raw copeptin signal nor the copeptin/CRH ratio demonstrated a consistent, statistically reliable relationship with psychiatric outcomes over the ketamine protocol. Interactions with PTSD comorbidity showed small positive coefficients—hinting that the biomarker–symptom link might be subtly stronger in MDE+PTSD—but these effects were imprecise and only slightly improved model fit. Thus, in this sample, acute AVP‐related changes do not appear to drive mood, anxiety, or suicidality trajectories, underscoring the specificity of the physiologic response and its limited immediate behavioral predictive power.
+
+```
+
+
+
+
+# End of Document
