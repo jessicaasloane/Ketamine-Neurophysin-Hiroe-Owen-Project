@@ -1,0 +1,529 @@
+---
+title: "Oxytocin & Neurophysin I EDA"
+output: html_document
+date: "2026-03-06"
+---
+
+```{r Connect working directory, include=FALSE}
+# you might need to change this 
+setwd("/Volumes/Jessica Sloane/Hiroe & Owen Project/")
+```
+
+```{r Libraries}
+library(tidyverse)
+library(patchwork)
+library(gridExtra)
+library(ggpubr)
+library(lmerTest)
+```
+
+```{r Load data}
+df <- read_csv("/Volumes/Jessica Sloane/Hiroe & Owen Project/data/oxt_np1_eda.csv")
+ket_df <- read_csv('/Volumes/Jessica Sloane/Hiroe & Owen Project/data/Hiroe previous project/RISC Phase II.csv')
+```
+
+```{r Spaghetti plots}
+# clean
+time_order <- c(
+  "baseline",
+  "-60",
+  "230",
+  "24h",
+  "phase3 -60",
+  "phase 3 230"
+)
+
+df <- df %>%
+  mutate(
+    timept = factor(timept, levels = time_order)
+  )
+
+### oxy spaghetti plot ####
+ggplot(df, aes(x = timept, y = oxt_lcms, group = riscid)) +
+  geom_line(alpha = 0.6) +
+  geom_point() +
+  theme_minimal() +
+  labs(
+    x = "Timepoint",
+    y = "Oxytocin",
+    title = "Oxytocin Over Time"
+  ) +
+  theme(
+  plot.title = element_text(hjust = 0.5, size = 16, face = "bold")
+)
+
+
+### neurophy spaghetti plot ####
+ggplot(df, aes(x = timept, y = npi_elisa, group = riscid)) +
+  geom_line(alpha = 0.6) +
+  geom_point() +
+  theme_minimal() +
+  labs(
+    x = "Timepoint",
+    y = "Neurophysin I",
+    title = "Neurophysin I Over Time"
+  ) +
+  theme(
+  plot.title = element_text(hjust = 0.5, size = 16, face = "bold")
+)
+
+```
+
+```{r Altman plot}
+### bland-altman plot #### 
+# compute mean and difference between oxy and npi
+df <- df %>%
+  mutate(
+    mean_measure = (oxt_lcms + npi_elisa) / 2,
+    diff_measure = oxt_lcms - npi_elisa
+  )
+
+# compute bland-altman statistics
+mean_diff <- mean(df$diff_measure, na.rm = TRUE)
+sd_diff <- sd(df$diff_measure, na.rm = TRUE)
+
+upper_limit <- mean_diff + 1.96 * sd_diff
+lower_limit <- mean_diff - 1.96 * sd_diff
+
+ggplot(df, aes(x = mean_measure, y = diff_measure)) +
+  geom_point(alpha = 0.7) +
+  geom_hline(yintercept = mean_diff, color = "blue", size = 1) +
+  geom_hline(yintercept = upper_limit, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = lower_limit, linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(
+    x = "Mean of Oxytocin & Neyrophysin I",
+    y = "Difference (Oxytocin - Neyrophysin I)",
+    title = "Bland–Altman Plot: Oxytocin vs Neyrophysin I"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5)
+  )
+```
+
+```{r Scatter plots}
+
+### scatter plot at all timepoints ####################
+# with pearson
+ggplot(df, aes(x = npi_elisa, y = oxt_lcms)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_cor(method = "pearson") +
+  theme_minimal() +
+  labs(
+    x = "Neurophysin I",
+    y = "Oxytocin",
+    title = "Oxytocin vs Neurophysin I (total)\n Pearson Correlation"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### scatter plot at all timepoints except 0 ####
+# with pearson
+df_no0 <- df %>%
+  filter(oxt_lcms != 0)
+
+ggplot(df_no0, aes(x = npi_elisa, y = oxt_lcms)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_cor(method = "pearson") +
+  theme_minimal() +
+  labs(
+    x = "Neurophysin I",
+    y = "Oxytocin",
+    title = "Oxytocin vs Neurophysin I (w/o 0's)\n Pearson Correlation"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### scatter plot at all timepoints ####
+# with pearson
+ggplot(df, aes(x = npi_elisa, y = oxt_lcms)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_cor(method = "spearman") +
+  theme_minimal() +
+  labs(
+    x = "Neurophysin I",
+    y = "Oxytocin",
+    title = "Oxytocin vs Neurophysin I (total)\n Spearman Correlation"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### scatter plot at all timepoints except 0 ####
+# with pearson
+df_no0 <- df %>%
+  filter(oxt_lcms != 0)
+
+ggplot(df_no0, aes(x = npi_elisa, y = oxt_lcms)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_cor(method = "spearman") +
+  theme_minimal() +
+  labs(
+    x = "Neurophysin I",
+    y = "Oxytocin",
+    title = "Oxytocin vs Neurophysin I (w/o 0's)\n Spearman Correlation"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### scatter plot at all timepoints ####
+# with pearson
+ggplot(df, aes(x = npi_elisa, y = oxt_lcms)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_cor(method = "kendall") +
+  theme_minimal() +
+  labs(
+    x = "Neurophysin I",
+    y = "Oxytocin",
+    title = "Oxytocin vs Neurophysin I (total)\n Kendall Correlation"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### scatter plot at all timepoints except 0 ####
+# with pearson
+df_no0 <- df %>%
+  filter(oxt_lcms != 0)
+
+ggplot(df_no0, aes(x = npi_elisa, y = oxt_lcms)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_cor(method = "kendall") +
+  theme_minimal() +
+  labs(
+    x = "Neurophysin I",
+    y = "Oxytocin",
+    title = "Oxytocin vs Neurophysin I (w/o 0's)\n Kendall Correlation"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### scatter plot -60 ####################
+df_m60 <- df %>%
+  filter(timept == "-60")
+
+ggplot(df_m60, aes(x = npi_elisa, y = oxt_lcms)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  theme_minimal() +
+  labs(
+    x = "Neurophysin I",
+    y = "Oxytocin",
+    title = "Oxytocin vs Neurophysin I at -60"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### scatter plot -60 with R val ####
+ggplot(df_m60, aes(x = npi_elisa, y = oxt_lcms)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_cor(method = "pearson") +
+  theme_minimal() +
+  labs(
+    x = "Neurophysin I",
+    y = "Oxytocin",
+    title = "Oxytocin vs Neurophysin I at -60"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### scatter plot 230 ####################
+df_230 <- df %>%
+  filter(timept == "230")
+
+ggplot(df_230, aes(x = npi_elisa, y = oxt_lcms)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  theme_minimal() +
+  labs(
+    x = "Neurophysin I",
+    y = "Oxytocin",
+    title = "Oxytocin vs Neurophysin I at 230"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### scatter plot 230 with R val ####
+ggplot(df_230, aes(x = npi_elisa, y = oxt_lcms)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_cor(method = "pearson") +
+  theme_minimal() +
+  labs(
+    x = "Neurophysin I",
+    y = "Oxytocin",
+    title = "Oxytocin vs Neurophysin I at 230"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### scatter plot delta -60 to 230 ####################
+# calculate change and add to new df
+df %>%
+  filter(timept %in% c("-60", "230")) %>%
+  select(riscid, timept, oxt_lcms, npi_elisa) %>%
+  arrange(riscid, timept)
+
+df %>%
+  filter(timept %in% c("-60", "230")) %>%
+  count(riscid, timept) %>%
+  filter(n > 1)
+
+change_df <- df %>%
+  filter(timept %in% c("-60", "230")) %>%
+  select(riscid, timept, oxt_lcms, npi_elisa) %>%
+  filter(!(is.na(oxt_lcms) & is.na(npi_elisa))) %>%
+  pivot_wider(
+    names_from = timept,
+    values_from = c(oxt_lcms, npi_elisa)
+  )
+
+change_df <- change_df %>%
+  mutate(
+    lcms_change = oxt_lcms_230 - `oxt_lcms_-60`,
+    elisa_change = npi_elisa_230 - `npi_elisa_-60`
+  )
+
+# plot it
+ggplot(change_df, aes(x = elisa_change, y = lcms_change)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(
+    x = "Change in Neurophysin I (-60 to 230)",
+    y = "Change in Oxytocin (-60 to 230)",
+    title = "Change in Oxytocin Measures (-60 to 230)"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r Oxy & Npi raw vs log plot}
+### oxytocin raw plot ####
+#	distributions (histograms) for OXT and NP-I (raw + log)
+p1 <- 
+ggplot(df, aes(x = oxt_lcms)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+  theme_minimal() +
+  labs(
+    x = "OXT LCMS",
+    y = "Count",
+    title = "Distribution of OXT LCMS (Raw)"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### oxytocin log plot ####
+p2 <- 
+ggplot(df, aes(x = log(oxt_lcms))) +
+  geom_histogram(bins = 30, fill = "darkorange", color = "black") +
+  theme_minimal() +
+  labs(
+    x = "log(OXT LCMS)",
+    y = "Count",
+    title = "Distribution of OXT LCMS (Log)"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### neurophy raw plot ####
+p3 <- 
+ggplot(df, aes(x = npi_elisa)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+  theme_minimal() +
+  labs(
+    x = "NP-I ELISA",
+    y = "Count",
+    title = "Distribution of NP-I ELISA (Raw)"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+### neurophy log plot ####
+p4 <- 
+ggplot(df, aes(x = log(npi_elisa))) +
+  geom_histogram(bins = 30, fill = "darkorange", color = "black") +
+  theme_minimal() +
+  labs(
+    x = "log(NP-I ELISA)",
+    y = "Count",
+    title = "Distribution of NP-I ELISA (Log)"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+```
+
+# Npi work 3/17/2026
+
+```{r Clean data}
+# subset data to create graphs of npi over time (-60, 230, 1440)
+df_npi_time <- df %>%
+  mutate(timept = factor(timept)) %>%
+  filter(timept %in% c("-60", "230", "24h")) %>%
+  mutate(
+    timept = recode(timept, "24h" = "1440"), # rename
+    # 0.5 and 10 were the vals Hiroe found that standardize our data to normal distribution the most
+    log_oxt_lcms = log(oxt_lcms + 0.5), # log transform oxy
+    log_npi_elisa = log(npi_elisa + 10) # log transform npi
+  ) 
+
+# clean ket_df
+ket_df <- ket_df %>%
+  rename(
+    riscid = Code,
+    timept = Timepoint
+  ) %>%
+  mutate(
+    timept = recode(timept,
+                    `1` = "-60",
+                    `2` = "240",
+                    `3` = "1440"),
+    timept = factor(timept, levels = c("-60", "240", "1440"))
+  ) 
+
+# merge
+merged_df <- df_npi_time %>%
+  left_join(ket_df, by = c("riscid", "timept")) %>%
+  select(-Time) %>%
+  mutate(timept_num = as.numeric(as.character(timept)))
+```
+
+```{r Spaghetti plots}
+# spaghetti plot (log) of npi over time 
+ggplot(merged_df, aes(x = timept, y = log_npi_elisa, group = riscid)) +
+  geom_line(alpha = 0.4) +
+  geom_point() +
+  theme_minimal() +
+  labs(
+    x = "Timepoint",
+    y = "Neurophysin I (log)",
+    title = "Npi (log) Over Time by Patient"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# spaghetti plot (raw) of npi over time 
+ggplot(merged_df, aes(x = timept, y = npi_elisa, group = riscid)) +
+  geom_line(alpha = 0.4) +
+  geom_point() +
+  theme_minimal() +
+  labs(
+    x = "Timepoint",
+    y = "Neurophysin I (raw)",
+    title = "Npi Over Time by Patient"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# plot npi over time (log) with true time
+ggplot(merged_df, aes(x = timept_num, y = log_npi_elisa, group = riscid)) +
+  geom_line(alpha = 0.4) +
+  geom_point() +
+  scale_x_continuous(
+    breaks = c(-60, 230, 1440),
+    labels = c("-60", "230", "1440")
+  ) +
+  theme_minimal() +
+  labs(
+    x = "Time (minutes)",
+    y = "Neurophysin I (log)",
+    title = "NPI (log) Over Time by Patient"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# plot npi over time (raw) with true time
+ggplot(merged_df, aes(x = timept_num, y = npi_elisa, group = riscid)) +
+  geom_line(alpha = 0.4) +
+  geom_point() +
+  scale_x_continuous(
+    breaks = c(-60, 230, 1440),
+    labels = c("-60", "230", "1440")
+  ) +
+  theme_minimal() +
+  labs(
+    x = "Time (minutes)",
+    y = "Neurophysin I",
+    title = "NPI Over Time by Patient"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r Models and corresponding plots}
+# linear model
+lmod_npi <- summary(lmerTest::lmer(log_npi_elisa ~ timept + (1|`riscid`), data = merged_df))
+lmod_npi
+
+# npi linear plot
+linear_plot <- ggplot(merged_df, aes(x = timept_num, y = log_npi_elisa)) +
+  # quadratic regression line + CI band
+  stat_smooth(
+    method  = "lm",
+    formula = y ~ x, # 2 indicates ??
+    se      = TRUE,
+    size    = 1.3,
+    color   = "deeppink4",     
+    fill    = "lightpink",      
+    alpha   = 0.3
+  ) +
+  # scales & labels
+  scale_color_brewer(
+    palette = "Set2",
+    name    = "Timepoint"
+  ) +
+  scale_x_continuous(
+    breaks = c(-60, 230, 1440),
+    labels = c("-60 min", "+230 min", "+24 hr")
+  ) +
+  labs(
+    title = "Neurophysin Trajectory",
+    x     = "Time Relative to Infusion",
+    y     = "Log Neurophysin"
+  ) +
+  # theme tweaks
+  theme_minimal(base_size = 8) +
+  theme(
+    plot.title       = element_text(hjust = 0.5, face = "bold", size = 8),
+    axis.text.x      = element_text(face = "bold", size = 6),
+    axis.title       = element_text(face = "bold", size = 6),
+    legend.position  = "none",
+    legend.title     = element_text(face = "bold"),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_blank()
+  )
+linear_plot
+
+# quadratic model
+qmod_npi <- summary(lmerTest::lmer(log_npi_elisa ~ poly(timept, 2) + (1|`riscid`), data = merged_df))
+qmod_npi
+
+# npi quadratic plot
+quad_plot <- ggplot(merged_df, aes(x = timept_num, y = log_npi_elisa)) +
+  # quadratic regression line + CI band
+  stat_smooth(
+    method  = "lm",
+    formula = y ~ poly(x, 2), # 2 indicates ??
+    se      = TRUE,
+    size    = 1.3,
+    color   = "darkblue",     
+    fill    = "lightblue",      
+    alpha   = 0.3
+  ) +
+  # scales & labels
+  scale_color_brewer(
+    palette = "Set2",
+    name    = "Timepoint"
+  ) +
+  scale_x_continuous(
+    breaks = c(-60, 230, 1440),
+    labels = c("-60 min", "+230 min", "+24 hr")
+  ) +
+  labs(
+    title = "Neurophysin Trajectory",
+    x     = "Time Relative to Infusion",
+    y     = "Log Neurophysin"
+  ) +
+  # theme tweaks
+  theme_minimal(base_size = 8) +
+  theme(
+    plot.title       = element_text(hjust = 0.5, face = "bold", size = 8),
+    axis.text.x      = element_text(face = "bold", size = 6),
+    axis.title       = element_text(face = "bold", size = 6),
+    legend.position  = "none",
+    legend.title     = element_text(face = "bold"),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_blank()
+  )
+quad_plot
+```
+
